@@ -2,7 +2,7 @@
   "use strict";
 
   // ─── Config ────────────────────────────────────────────────────────────────
-  var API_URL = "http://localhost:3000/api/chat";
+  var API_URL = "https://felt-studios-faye.vercel.app/api/chat";
   var OPENING_MESSAGE =
     "Hey — you've reached Studio Felt. We design products that people feel. What can I help with?";
   var CALENDAR_TRIGGER = "[SHOW_CALENDAR]";
@@ -26,10 +26,10 @@
     ".felt-panel{width:420px;height:100vh;max-height:680px;background:#000000;border:none;",
     "border-radius:20px;position:fixed;bottom:24px;left:24px;display:flex;flex-direction:column;",
     "overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;",
-    "box-shadow:0 32px 64px rgba(0,0,0,0.6);z-index:99999;",
-    "opacity:0;transform:translateY(12px) scale(0.97);pointer-events:none;",
-    "transition:opacity 0.28s cubic-bezier(.4,0,.2,1),transform 0.28s cubic-bezier(.4,0,.2,1);}",
-    ".felt-panel.open{opacity:1;transform:translateY(0) scale(1);pointer-events:all;}",
+    "box-shadow:0 32px 64px rgba(0,0,0,0.6);z-index:99999;transform-origin:bottom left;",
+    "opacity:0;transform:translateY(20px);pointer-events:none;",
+    "transition:opacity 0.6s cubic-bezier(0.16,1,0.3,1),transform 0.6s cubic-bezier(0.16,1,0.3,1);}",
+    ".felt-panel--visible{opacity:1!important;transform:translateY(0)!important;pointer-events:all!important;}",
 
     /* TOP BAR */
     ".felt-topbar{position:absolute;top:0;left:0;right:0;padding:20px 20px;",
@@ -43,7 +43,7 @@
 
     /* MESSAGES AREA */
     ".felt-messages{flex:1;overflow-y:auto;padding:80px 32px 24px 32px;",
-    "display:flex;flex-direction:column;justify-content:flex-end;scrollbar-width:none;}",
+    "display:flex;flex-direction:column;scrollbar-width:none;}",
     ".felt-messages::-webkit-scrollbar{display:none;}",
 
     /* MESSAGE BLOCK */
@@ -82,11 +82,10 @@
     ".felt-pill{position:fixed;bottom:24px;left:24px;background:#1a1a1a;color:#fff;border:none;",
     "border-radius:100px;padding:20px 24px;font-size:15px;",
     "font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;",
-    "cursor:pointer;z-index:99998;transition:transform 0.2s ease,opacity 0.2s ease;",
+    "cursor:pointer;z-index:99998;transition:transform 0.2s ease;",
     "user-select:none;}",
     ".felt-pill:hover{transform:scale(1.03);}",
-    ".felt-pill.hidden{opacity:0;pointer-events:none;transform:scale(0.85);}",
-    ".felt-pill.retracting{opacity:0;pointer-events:none;}",
+    ".felt-pill--hidden{display:none!important;}",
 
     /* TYPING PULSE */
     ".felt-pulse{display:flex;gap:4px;align-items:center;padding:4px 0;margin-top:4px;}",
@@ -369,47 +368,43 @@
   }
 
   // ─── Open / Close animation ────────────────────────────────────────────────
-  var pillRetractTimer = null;
+  var closeTimer = null;
 
   function openWidget() {
     if (isOpen) return;
     isOpen = true;
+    if (closeTimer) clearTimeout(closeTimer);
 
-    // 1. Pill retracts into circle
-    pill.classList.add("retracting");
+    // Hide pill immediately, show panel
+    pill.classList.add("felt-pill--hidden");
+    panel.classList.add("felt-panel--visible");
 
-    // 2. After retract settles, hide pill and open panel
-    pillRetractTimer = setTimeout(function () {
-      pill.classList.add("hidden");
-      panel.classList.add("open");
+    if (messagesEl.children.length === 0) {
+      appendBotMessage(OPENING_MESSAGE);
+      setTimeout(showQuickReplies, 120);
+    }
 
-      // Hardcoded opening message on first open
-      if (messagesEl.children.length === 0) {
-        appendBotMessage(OPENING_MESSAGE);
-        setTimeout(showQuickReplies, 120);
-      }
-
-      setTimeout(function () {
-        inputEl.focus();
-      }, 300);
-    }, 320);
+    setTimeout(function () { inputEl.focus(); }, 350);
   }
 
   function closeWidget() {
     if (!isOpen) return;
     isOpen = false;
+    if (closeTimer) clearTimeout(closeTimer);
 
-    if (pillRetractTimer) clearTimeout(pillRetractTimer);
+    // Animate panel out, then restore pill
+    panel.style.transition = "opacity 0.6s cubic-bezier(0.16,1,0.3,1), transform 0.6s cubic-bezier(0.16,1,0.3,1)";
+    panel.style.opacity = "0";
+    panel.style.transform = "translateY(20px)";
 
-    panel.classList.remove("open");
-
-    // Fade pill back in after panel hides
-    setTimeout(function () {
-      pill.classList.remove("hidden");
-      setTimeout(function () {
-        pill.classList.remove("retracting");
-      }, 40);
-    }, 260);
+    closeTimer = setTimeout(function () {
+      panel.classList.remove("felt-panel--visible");
+      // Reset inline styles so the CSS transition takes over again on next open
+      panel.style.transition = "";
+      panel.style.opacity = "";
+      panel.style.transform = "";
+      pill.classList.remove("felt-pill--hidden");
+    }, 600);
   }
 
   // ─── Events ────────────────────────────────────────────────────────────────
