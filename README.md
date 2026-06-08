@@ -1,75 +1,93 @@
-# Felt Studios Chatbot — API Proxy
+# Faye
 
-A Next.js serverless function that proxies chat requests from the Felt Studios widget to OpenAI GPT-4o with streaming.
+Faye is Studio Felt's website assistant — a chat widget that lives on studiofelt.co and talks to visitors the way the studio would. Direct, warm, curious. Not a bot. Not a helper. Studio Felt itself, in conversation.
 
-## Endpoint
+---
+
+## What it does
+
+Faye sits in the bottom-left corner of the page as a pill button. Click it and a full chat panel slides up. You can ask about the studio, the work, pricing, or how to get in touch — and Faye responds in Studio Felt's voice, keeping the conversation short and pointed.
+
+When someone is ready to book a call, Faye surfaces a Cal.com calendar inline — no redirects, no copy-pasting links.
+
+---
+
+## How it's built
+
+**Frontend — `public/widget.js`**
+A single vanilla JS file, no dependencies. Injects itself into any page via one `<script>` tag. All styles are injected at runtime. Everything is scoped inside a self-invoking function so it never touches the host page's globals.
+
+**Backend — `app/api/chat/route.ts`**
+A Next.js App Router serverless function that proxies requests to OpenAI GPT-4o. The browser never talks to OpenAI directly. The system prompt is injected server-side — Faye's voice and knowledge live here, not in the client.
+
+Streaming is handled via Server-Sent Events. Tokens arrive in real time and are appended to the message as they stream in.
+
+**Security**
+- CORS locked to `studiofelt.co` and `localhost:3000`
+- OpenAI API key is server-side only, read from environment
+- Rate limited to 30 requests per IP per hour
+
+---
+
+## Repo structure
 
 ```
-POST /api/chat
-Content-Type: application/json
-
-{
-  "messages": [
-    { "role": "user", "content": "Hello!" }
-  ]
-}
+├── app/
+│   └── api/chat/route.ts   — streaming proxy to GPT-4o
+├── lib/
+│   └── rateLimiter.ts      — in-memory sliding window rate limiter
+├── public/
+│   ├── widget.js           — the full chat widget (vanilla JS)
+│   └── test.html           — local test page
+├── .env.example            — required environment variables
+└── .env.local              — your local secrets (git-ignored)
 ```
 
-Returns a `text/event-stream` response. Each event is:
+---
 
-```
-data: {"token":"Hello"}\n\n
-```
+## Running locally
 
-The final event is:
+```bash
+cp .env.example .env.local
+# Add your OpenAI API key to .env.local
 
-```
-data: [DONE]\n\n
-```
-
-Errors mid-stream are sent as:
-
-```
-data: {"error":"Stream error."}\n\n
+npm install
+npm run dev
 ```
 
-## Local development
+Open `http://localhost:3000/test.html` to see Faye running against the local API.
 
-1. Copy the example env file and add your key:
+---
 
-   ```bash
-   cp .env.example .env.local
-   # edit .env.local and set OPENAI_API_KEY
-   ```
+## Deploying to Vercel
 
-2. Install dependencies and run:
+1. Push to GitHub
+2. Import the repo in the [Vercel dashboard](https://vercel.com/new)
+3. Under **Settings → Environment Variables**, add `OPENAI_API_KEY`
+4. Deploy
 
-   ```bash
-   npm install
-   npm run dev
-   ```
+Once deployed, update the `API_URL` constant at the top of `widget.js` to point to your Vercel URL, then embed on any page with:
 
-   The endpoint is available at `http://localhost:3000/api/chat`.
+```html
+<script src="https://your-deployment.vercel.app/widget.js"></script>
+```
 
-## Deploy to Vercel
+---
 
-1. Push this repository to GitHub (or connect directly from your machine via the Vercel CLI).
+## Embedding on the Studio Felt site
 
-2. Import the project in the [Vercel dashboard](https://vercel.com/new).
+Drop a single script tag before the closing `</body>` tag on any Framer or custom page. Faye initialises itself, injects its own styles, and never interferes with the host page.
 
-3. Under **Settings → Environment Variables**, add:
+```html
+<script src="https://your-deployment.vercel.app/widget.js"></script>
+```
 
-   | Name | Value |
-   |------|-------|
-   | `OPENAI_API_KEY` | `sk-...` |
+---
 
-4. Deploy. Vercel will automatically use the Next.js preset.
+## Environment variables
 
-> **Never commit `.env.local`** — it is listed in `.gitignore`. Only `.env.example` (no real values) should be committed.
+| Variable | Description |
+|---|---|
+| `OPENAI_API_KEY` | Your OpenAI secret key |
 
-## Security notes
-
-- The OpenAI API key is read server-side only — it is never exposed to the browser.
-- CORS is locked to `https://studiofelt.co` and `http://localhost:3000`.
-- Rate limiting: 30 requests per IP per hour (in-memory, resets on cold start).
-- The system prompt is injected server-side; clients cannot override it.
+See `.env.example` for the template.
