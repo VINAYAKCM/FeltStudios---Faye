@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { checkRateLimit } from "@/lib/rateLimiter";
 
-const ALLOWED_ORIGINS = ["https://studiofelt.co", "https://www.studiofelt.co", "http://localhost:3000"];
+const ALLOWED_ORIGINS = ["https://studiofelt.co", "https://www.studiofelt.co", "http://localhost:3000", "https://felt-studios-faye.vercel.app"];
 
 const SYSTEM_PROMPT = `
 You are the voice of Studio Felt — a small, sharp design and 
