@@ -567,16 +567,16 @@ function Lt(n, s) {
 
   // Orb — the library ships tuned presets only at 20 and 64 CSS px, so we pull
   // the 20 preset's dot tuning and hand the draw fn our own render size. Its
-  // radii scale sub-linearly, so 24/28 stay legible without CSS upscaling.
+  // radii scale sub-linearly, so these stay legible without CSS upscaling.
   var ORB_PRESET_SIZE = 20;
-  var ORB_PILL_SIZE = 24;
-  var ORB_PANEL_SIZE = 28;
+  var ORB_PILL_SIZE = 28;
+  var ORB_PANEL_SIZE = 32;
   var ORB_SPEED = 0.75;
+  var ORB_STATE = "composing";
 
   // Motion
   var EXPAND_MS = 600;
   var EXPAND_EASE = "cubic-bezier(0.16,1,0.3,1)";
-  var ORB_SWAP_MS = 360; // breathing → composing, ~60% through the expand
 
   // ─── State ─────────────────────────────────────────────────────────────────
   var conversationHistory = [];
@@ -648,7 +648,8 @@ function Lt(n, s) {
     ".felt-input::placeholder{color:rgba(255,255,255,0.25);}",
 
     /* PILL */
-    ".felt-pill{position:fixed;bottom:24px;left:24px;background:#1a1a1a;color:#fff;border:none;",
+    // Background matches the panel exactly, so the morph never crosses a colour
+    ".felt-pill{position:fixed;bottom:24px;left:24px;background:#000000;color:#fff;border:none;",
     "border-radius:100px;padding:20px 24px;font-size:15px;",
     "font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;",
     "cursor:pointer;z-index:100000;user-select:none;",
@@ -781,10 +782,10 @@ function Lt(n, s) {
   var pill = document.createElement("button");
   pill.className = "felt-pill";
   pill.setAttribute("aria-label", "Open Studio Felt chat");
-  var pillOrb = createOrb("breathing", ORB_PILL_SIZE);
+  var pillOrb = createOrb(ORB_STATE, ORB_PILL_SIZE);
   var pillLabel = document.createElement("span");
   pillLabel.className = "felt-pill-label";
-  pillLabel.textContent = "Let's work together";
+  pillLabel.textContent = "Ask me anything";
   pill.appendChild(pillOrb.el);
   pill.appendChild(pillLabel);
 
@@ -809,7 +810,7 @@ function Lt(n, s) {
   ].join("");
 
   // Panel orb — sits at the head of the input row, where the pill's orb lands.
-  var panelOrb = createOrb("breathing", ORB_PANEL_SIZE);
+  var panelOrb = createOrb(ORB_STATE, ORB_PANEL_SIZE);
   var inputArea = panel.querySelector(".felt-input-area");
   inputArea.insertBefore(panelOrb.el, inputArea.firstChild);
 
@@ -1059,14 +1060,22 @@ function Lt(n, s) {
   var hoverTimer = null;
   var PILL_TRANSITION_OPACITY = ", opacity 0.18s ease";
 
+  // Scale is uniform, so a pixel delta has to be resolved against one axis —
+  // height, since that is what reads as "size" on a capsule. Derived from the
+  // live layout box (offsetHeight ignores transforms) so changing the orb size
+  // or the padding re-tunes the hover automatically.
+  function pillScale(deltaPx) {
+    return "scale(" + (1 + deltaPx / (pill.offsetHeight || 64)) + ")";
+  }
+
   function pillHoverIn() {
     if (isOpen) return;
     clearTimeout(hoverTimer);
     pill.style.transition = "transform 280ms cubic-bezier(0.34,1.56,0.64,1)" + PILL_TRANSITION_OPACITY;
-    pill.style.transform = "scale(1.03125)"; // +2px on the measured 64px height
+    pill.style.transform = pillScale(2); // overshoot +2px
     hoverTimer = setTimeout(function () {
       pill.style.transition = "transform 180ms ease-out" + PILL_TRANSITION_OPACITY;
-      pill.style.transform = "scale(1.028125)"; // settle at +1.8px
+      pill.style.transform = pillScale(1.8); // settle at +1.8px
     }, 280);
   }
 
@@ -1074,7 +1083,7 @@ function Lt(n, s) {
     if (isOpen) return;
     clearTimeout(hoverTimer);
     pill.style.transition = "transform 160ms ease-in" + PILL_TRANSITION_OPACITY;
-    pill.style.transform = "scale(0.996875)"; // undershoot -0.2px
+    pill.style.transform = pillScale(-0.2); // undershoot
     hoverTimer = setTimeout(function () {
       pill.style.transition = "transform 220ms " + EXPAND_EASE + PILL_TRANSITION_OPACITY;
       pill.style.transform = "scale(1)";
@@ -1090,7 +1099,6 @@ function Lt(n, s) {
   // content inside never distorts; the radius itself eases from the pill's
   // 29px to the panel's 20px so the two shapes are never visibly different.
   var closeTimer = null;
-  var orbSwapTimer = null;
   var PANEL_RADIUS = "20px";
   // The pill is a 100px-radius capsule, so its true corner is half its height.
   // Derived rather than hardcoded — padding or font changes shouldn't desync it.
@@ -1110,7 +1118,6 @@ function Lt(n, s) {
     if (isOpen) return;
     isOpen = true;
     clearTimeout(closeTimer);
-    clearTimeout(orbSwapTimer);
     clearTimeout(hoverTimer);
 
     // Measure the pill before it goes anywhere, hover scale included.
@@ -1139,10 +1146,6 @@ function Lt(n, s) {
     panel.style.borderRadius = PANEL_RADIUS;
     panel.classList.remove("felt-panel--collapsed");
 
-    orbSwapTimer = setTimeout(function () {
-      panelOrb.setState("composing");
-    }, ORB_SWAP_MS);
-
     if (messagesEl.children.length === 0) {
       appendBotMessage(OPENING_MESSAGE);
       setTimeout(showQuickReplies, 120);
@@ -1159,7 +1162,6 @@ function Lt(n, s) {
     if (!isOpen) return;
     isOpen = false;
     clearTimeout(closeTimer);
-    clearTimeout(orbSwapTimer);
 
     // Un-hide the pill to measure it, but keep it transparent — a display:none
     // element has no box to read.
@@ -1174,8 +1176,6 @@ function Lt(n, s) {
     panel.style.height = rect.height + "px";
     panel.style.borderRadius = pillRadius(rect);
 
-    panelOrb.setState("breathing");
-
     // Bring the pill back just before the panel lands, so the two crossfade
     // rather than one popping in after the other has gone.
     setTimeout(function () {
@@ -1183,15 +1183,21 @@ function Lt(n, s) {
     }, Math.max(0, EXPAND_MS - 180));
 
     closeTimer = setTimeout(function () {
+      // Suppress transitions for the reset. Clearing the inline width/height
+      // snaps the panel back to its stylesheet 420x680 instantly, while
+      // dropping --visible starts the base 0.6s opacity fade — so without this
+      // the full-size panel reappears and fades out after the collapse has
+      // already finished, which reads as a flash of the window reopening.
+      panel.style.transition = "none";
       panel.classList.remove("felt-panel--visible");
       panel.classList.remove("felt-panel--collapsed");
-      // Clear inline geometry so the stylesheet owns the panel again.
-      panel.style.transition = "";
       panel.style.width = "";
       panel.style.height = "";
       panel.style.borderRadius = "";
       panel.style.opacity = "";
       panel.style.transform = "";
+      void panel.offsetHeight; // flush the reset before transitions come back
+      panel.style.transition = "";
     }, EXPAND_MS);
   }
 
