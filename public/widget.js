@@ -671,6 +671,12 @@ function Lt(n, s) {
        element that carries continuity from the pill, so it stays lit. */
     ".felt-panel-fade{transition:opacity 0.3s ease;}",
     ".felt-panel--collapsed .felt-panel-fade{opacity:0;}",
+    // Closing is not simply opening reversed. On the way out the input row has
+    // to stay lit the whole way down, so the orb and its label read as the one
+    // continuous thing the window collapses into — the pill only crossfades in
+    // at the very end. Opening still fades the placeholder in normally, since
+    // there the pill is the element carrying continuity.
+    ".felt-panel--closing .felt-panel-fade.felt-input{opacity:1;}",
 
     /* TYPING PULSE */
     ".felt-pulse{display:flex;gap:4px;align-items:center;padding:4px 0;margin-top:4px;}",
@@ -1126,6 +1132,7 @@ function Lt(n, s) {
 
     // Seed the panel on the pill's footprint with no transition, so the first
     // painted frame is indistinguishable from the pill it replaces.
+    panel.classList.remove("felt-panel--closing"); // in case a close was interrupted
     panel.classList.add("felt-panel--collapsed");
     panel.style.transition = "none";
     panel.style.width = rect.width + "px";
@@ -1171,6 +1178,7 @@ function Lt(n, s) {
     var rect = pill.getBoundingClientRect();
 
     panel.classList.add("felt-panel--collapsed");
+    panel.classList.add("felt-panel--closing");
     panel.style.transition = expandTransition();
     panel.style.width = rect.width + "px";
     panel.style.height = rect.height + "px";
@@ -1191,6 +1199,7 @@ function Lt(n, s) {
       panel.style.transition = "none";
       panel.classList.remove("felt-panel--visible");
       panel.classList.remove("felt-panel--collapsed");
+      panel.classList.remove("felt-panel--closing");
       panel.style.width = "";
       panel.style.height = "";
       panel.style.borderRadius = "";
