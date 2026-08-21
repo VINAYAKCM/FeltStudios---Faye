@@ -569,14 +569,15 @@ function Lt(n, s) {
   // the 20 preset's dot tuning and hand the draw fn our own render size. Its
   // radii scale sub-linearly, so these stay legible without CSS upscaling.
   var ORB_PRESET_SIZE = 20;
-  var ORB_PILL_SIZE = 28;
-  var ORB_PANEL_SIZE = 32;
+  var ORB_SIZE = 32;
   var ORB_SPEED = 0.75;
   var ORB_STATE = "composing";
 
   // Motion
   var EXPAND_MS = 600;
   var EXPAND_EASE = "cubic-bezier(0.16,1,0.3,1)";
+  var PANEL_W = 420;
+  var PANEL_MAX_H = 680;
 
   // ─── State ─────────────────────────────────────────────────────────────────
   var conversationHistory = [];
@@ -591,14 +592,17 @@ function Lt(n, s) {
     /* Reset — padding intentionally excluded: ID specificity would override class padding rules */
     "#sf-widget-root *{box-sizing:border-box;margin:0;}",
 
-    /* PANEL */
-    ".felt-panel{width:420px;height:100vh;max-height:680px;background:#000000;border:none;",
-    "border-radius:20px;position:fixed;bottom:24px;left:24px;display:flex;flex-direction:column;",
-    "overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;",
+    /* PANEL — always present and always opaque. It is never hidden and never
+       faded: collapsed it is the pill, expanded it is the window. Size is
+       driven inline so open and closed share one continuous animation.
+       Pinned bottom-left so growing changes only its top and right edges,
+       which is what keeps the input row nailed in place. */
+    ".felt-panel{background:#000000;border:none;position:fixed;bottom:24px;left:24px;",
+    "display:flex;flex-direction:column;overflow:hidden;",
+    "font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;",
     "box-shadow:0 32px 64px rgba(0,0,0,0.6);z-index:99999;transform-origin:bottom left;",
-    "opacity:0;transform:translateY(20px);pointer-events:none;",
-    "transition:opacity 0.6s cubic-bezier(0.16,1,0.3,1),transform 0.6s cubic-bezier(0.16,1,0.3,1);}",
-    ".felt-panel--visible{opacity:1!important;transform:translateY(0)!important;pointer-events:all!important;}",
+    "user-select:none;will-change:width,height;}",
+    ".felt-panel--open{user-select:auto;}",
 
     /* TOP BAR */
     ".felt-topbar{position:absolute;top:0;left:0;right:0;padding:20px 20px;",
@@ -611,7 +615,12 @@ function Lt(n, s) {
     ".felt-topbar-btn:hover{background:rgba(255,255,255,0.2);}",
 
     /* MESSAGES AREA */
-    ".felt-messages{flex:1;overflow-y:auto;padding:80px 32px 24px 32px;",
+    // Padding is not compressible, so in the collapsed panel this row cannot be
+    // shorter than its own 80px+bottom padding no matter what flex says. It is
+    // allowed to overflow and be clipped instead; the input row below is taken
+    // out of flow so it can never be pushed out with it. Bottom padding clears
+    // the pinned input row the same way the top padding clears the topbar.
+    ".felt-messages{flex:1;min-height:0;overflow-y:auto;padding:80px 32px 100px 32px;",
     "display:flex;flex-direction:column;scrollbar-width:none;}",
     ".felt-messages::-webkit-scrollbar{display:none;}",
 
@@ -641,42 +650,30 @@ function Lt(n, s) {
     "background:#111;margin-top:12px;}",
     ".felt-cal-card iframe{width:100%;height:100%;border:none;display:block;}",
 
-    /* INPUT AREA */
-    ".felt-input-area{padding:16px 32px 28px;display:flex;align-items:center;gap:12px;border-top:none;flex-shrink:0;}",
+    /* INPUT AREA — the one row that exists in both states. It is bottom-anchored
+       inside the panel and the panel is pinned bottom-left, so the orb and the
+       label sit at fixed viewport coordinates no matter what size the panel is.
+       Nothing here may move, fade, or be duplicated between states. */
+    // Taken out of flow and pinned to the panel's bottom edge. This is what
+    // guarantees the orb and label hold their exact viewport position at every
+    // size the panel takes — they are measured from an edge that never moves.
+    ".felt-input-area{position:absolute;bottom:0;left:0;right:0;",
+    "padding:16px 32px 28px;display:flex;align-items:center;gap:12px;border-top:none;}",
     ".felt-input{flex:1;background:transparent;border:none;outline:none;",
-    "font-size:16px;color:rgba(255,255,255,0.5);font-family:inherit;padding:0;}",
-    ".felt-input::placeholder{color:rgba(255,255,255,0.25);}",
-
-    /* PILL */
-    // Background matches the panel exactly, so the morph never crosses a colour
-    ".felt-pill{position:fixed;bottom:24px;left:24px;background:#000000;color:#fff;border:none;",
-    "border-radius:100px;padding:20px 24px;font-size:15px;",
-    "font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;",
-    "cursor:pointer;z-index:100000;user-select:none;",
-    "display:flex;align-items:center;gap:10px;white-space:nowrap;",
-    // Anchored bottom-left, so hover must grow away from the corner it sits in
-    "transform-origin:bottom left;will-change:transform,opacity;",
-    "opacity:1;transition:opacity 0.18s ease;}",
-    ".felt-pill-label{line-height:1;}",
-    ".felt-pill--fading{opacity:0!important;pointer-events:none;}",
-    ".felt-pill--hidden{display:none!important;}",
+    "font-size:16px;color:#ffffff;font-family:inherit;padding:0;}",
+    ".felt-input::placeholder{color:#ffffff;opacity:1;}",
 
     /* ORB */
     ".felt-orb{display:block;flex-shrink:0;}",
 
-    /* EXPAND CHOREOGRAPHY — panel grows out of the pill's footprint.
-       Width/height are animated rather than transform:scale so the 20px
-       border-radius stays round and the content never stretches. The orb in
-       the input row is deliberately excluded from the fade: it is the one
-       element that carries continuity from the pill, so it stays lit. */
+    /* COLLAPSED — the panel shrunk to its own input row. This IS the pill;
+       there is no separate pill element to hand off to. */
+    ".felt-panel--collapsed{cursor:pointer;}",
+    ".felt-panel--collapsed .felt-input{pointer-events:none;cursor:pointer;}",
+
+    /* Only the content above the input row fades. The input row never does. */
     ".felt-panel-fade{transition:opacity 0.3s ease;}",
-    ".felt-panel--collapsed .felt-panel-fade{opacity:0;}",
-    // Closing is not simply opening reversed. On the way out the input row has
-    // to stay lit the whole way down, so the orb and its label read as the one
-    // continuous thing the window collapses into — the pill only crossfades in
-    // at the very end. Opening still fades the placeholder in normally, since
-    // there the pill is the element carrying continuity.
-    ".felt-panel--closing .felt-panel-fade.felt-input{opacity:1;}",
+    ".felt-panel--collapsed .felt-panel-fade{opacity:0;pointer-events:none;}",
 
     /* TYPING PULSE */
     ".felt-pulse{display:flex;gap:4px;align-items:center;padding:4px 0;margin-top:4px;}",
@@ -784,24 +781,15 @@ function Lt(n, s) {
   var root = document.createElement("div");
   root.id = "sf-widget-root";
 
-  // Pill — orb leads, label follows
-  var pill = document.createElement("button");
-  pill.className = "felt-pill";
-  pill.setAttribute("aria-label", "Open Studio Felt chat");
-  var pillOrb = createOrb(ORB_STATE, ORB_PILL_SIZE);
-  var pillLabel = document.createElement("span");
-  pillLabel.className = "felt-pill-label";
-  pillLabel.textContent = "Ask me anything";
-  pill.appendChild(pillOrb.el);
-  pill.appendChild(pillLabel);
-
-  // Panel
+  // There is no pill element. The panel collapsed to its own input row is the
+  // pill — that is what lets the orb and the label be a single instance that
+  // never moves, rather than two that hand off to each other.
   var panel = document.createElement("div");
   panel.className = "felt-panel";
   panel.setAttribute("role", "dialog");
   panel.setAttribute("aria-label", "Studio Felt chat");
 
-  // Topbar + messages + input
+  // Topbar + messages + input. Note the input row carries no fade class.
   panel.innerHTML = [
     '<div class="felt-topbar felt-panel-fade">',
     '  <div class="felt-topbar-left">',
@@ -811,17 +799,16 @@ function Lt(n, s) {
     '</div>',
     '<div class="felt-messages felt-panel-fade"></div>',
     '<div class="felt-input-area">',
-    '  <input class="felt-input felt-panel-fade" type="text" placeholder="Ask me anything…" aria-label="Message input" autocomplete="off" />',
+    '  <input class="felt-input" type="text" placeholder="Ask me anything" aria-label="Message input" autocomplete="off" />',
     "</div>",
   ].join("");
 
-  // Panel orb — sits at the head of the input row, where the pill's orb lands.
-  var panelOrb = createOrb(ORB_STATE, ORB_PANEL_SIZE);
+  // The single orb. One instance, one position, alive for the whole session.
+  var orb = createOrb(ORB_STATE, ORB_SIZE);
   var inputArea = panel.querySelector(".felt-input-area");
-  inputArea.insertBefore(panelOrb.el, inputArea.firstChild);
+  inputArea.insertBefore(orb.el, inputArea.firstChild);
 
   root.appendChild(panel);
-  root.appendChild(pill);
   document.body.appendChild(root);
 
   // Grab live refs
@@ -1059,164 +1046,150 @@ function Lt(n, s) {
       });
   }
 
-  // ─── Pill hover ────────────────────────────────────────────────────────────
-  // Two-stage on each direction: overshoot past the target, then settle back.
-  // A single eased transition reads as inert at this amplitude — the tiny
-  // rebound is what makes 3% of scale feel like a response.
-  var hoverTimer = null;
-  var PILL_TRANSITION_OPACITY = ", opacity 0.18s ease";
+  // ─── Collapsed geometry ────────────────────────────────────────────────────
+  // Collapsed, the panel is exactly its own input row: that row's natural
+  // height, and a width that just fits padding + orb + gap + label. Measured
+  // off the live DOM rather than hardcoded, so changing the orb size, the row
+  // padding or the label text re-derives the pill on its own.
+  var COLLAPSED_W = 0;
+  var COLLAPSED_H = 0;
 
-  // Scale is uniform, so a pixel delta has to be resolved against one axis —
-  // height, since that is what reads as "size" on a capsule. Derived from the
-  // live layout box (offsetHeight ignores transforms) so changing the orb size
-  // or the padding re-tunes the hover automatically.
-  function pillScale(deltaPx) {
-    return "scale(" + (1 + deltaPx / (pill.offsetHeight || 64)) + ")";
+  function measureCollapsed() {
+    var area = getComputedStyle(inputArea);
+    var ics = getComputedStyle(inputEl);
+    var probe = document.createElement("span");
+    probe.textContent = inputEl.placeholder;
+    probe.style.cssText =
+      "position:absolute;left:-9999px;top:-9999px;white-space:nowrap;" +
+      "font-family:" + ics.fontFamily + ";font-size:" + ics.fontSize +
+      ";font-weight:" + ics.fontWeight + ";letter-spacing:" + ics.letterSpacing;
+    document.body.appendChild(probe);
+    var textW = probe.getBoundingClientRect().width;
+    probe.parentNode.removeChild(probe);
+
+    var gap = parseFloat(area.columnGap);
+    if (isNaN(gap)) gap = 12;
+    COLLAPSED_H = inputArea.offsetHeight;
+    COLLAPSED_W = Math.ceil(
+      parseFloat(area.paddingLeft) + ORB_SIZE + gap + textW + parseFloat(area.paddingRight)
+    );
   }
 
-  function pillHoverIn() {
+  // ─── Hover ─────────────────────────────────────────────────────────────────
+  // Two-stage in each direction: overshoot the target, then settle back. A
+  // single eased transition reads as inert at this amplitude — the small
+  // rebound is what makes 3% of scale feel like a response. Applies only while
+  // collapsed, since expanded there is no pill to press.
+  var hoverTimer = null;
+
+  function pillScale(deltaPx) {
+    return "scale(" + (1 + deltaPx / (COLLAPSED_H || 76)) + ")";
+  }
+
+  function hoverIn() {
     if (isOpen) return;
     clearTimeout(hoverTimer);
-    pill.style.transition = "transform 280ms cubic-bezier(0.34,1.56,0.64,1)" + PILL_TRANSITION_OPACITY;
-    pill.style.transform = pillScale(2); // overshoot +2px
+    panel.style.transition = "transform 280ms cubic-bezier(0.34,1.56,0.64,1)";
+    panel.style.transform = pillScale(2); // overshoot +2px
     hoverTimer = setTimeout(function () {
-      pill.style.transition = "transform 180ms ease-out" + PILL_TRANSITION_OPACITY;
-      pill.style.transform = pillScale(1.8); // settle at +1.8px
+      panel.style.transition = "transform 180ms ease-out";
+      panel.style.transform = pillScale(1.8); // settle at +1.8px
     }, 280);
   }
 
-  function pillHoverOut() {
+  function hoverOut() {
     if (isOpen) return;
     clearTimeout(hoverTimer);
-    pill.style.transition = "transform 160ms ease-in" + PILL_TRANSITION_OPACITY;
-    pill.style.transform = pillScale(-0.2); // undershoot
+    panel.style.transition = "transform 160ms ease-in";
+    panel.style.transform = pillScale(-0.2); // undershoot
     hoverTimer = setTimeout(function () {
-      pill.style.transition = "transform 220ms " + EXPAND_EASE + PILL_TRANSITION_OPACITY;
-      pill.style.transform = "scale(1)";
+      panel.style.transition = "transform 220ms " + EXPAND_EASE;
+      panel.style.transform = "scale(1)";
     }, 160);
   }
 
-  pill.addEventListener("mouseenter", pillHoverIn);
-  pill.addEventListener("mouseleave", pillHoverOut);
+  panel.addEventListener("mouseenter", hoverIn);
+  panel.addEventListener("mouseleave", hoverOut);
 
   // ─── Open / Close animation ────────────────────────────────────────────────
-  // The panel grows out of the pill's exact footprint. Width and height are
-  // animated (not transform:scale) so the corner radius stays circular and the
-  // content inside never distorts; the radius itself eases from the pill's
-  // 29px to the panel's 20px so the two shapes are never visibly different.
-  var closeTimer = null;
+  // One element, resized. The panel is never hidden, never faded and never
+  // reset, so there is nothing to hand off to and nothing to flash: opening and
+  // closing are the same animation run in opposite directions. Width and height
+  // are animated rather than transform:scale so the corner radius stays
+  // circular and the content never stretches, and because the panel is pinned
+  // bottom-left, resizing moves only its top and right edges — which is exactly
+  // what holds the orb and the label still.
   var PANEL_RADIUS = "20px";
-  // The pill is a 100px-radius capsule, so its true corner is half its height.
-  // Derived rather than hardcoded — padding or font changes shouldn't desync it.
-  function pillRadius(rect) {
-    return rect.height / 2 + "px";
-  }
 
   function expandTransition() {
     return (
       "width " + EXPAND_MS + "ms " + EXPAND_EASE +
       ", height " + EXPAND_MS + "ms " + EXPAND_EASE +
-      ", border-radius " + EXPAND_MS + "ms " + EXPAND_EASE
+      ", border-radius " + EXPAND_MS + "ms " + EXPAND_EASE +
+      ", transform " + EXPAND_MS + "ms " + EXPAND_EASE
     );
+  }
+
+  function applyCollapsed(instant) {
+    panel.style.transition = instant ? "none" : expandTransition();
+    panel.style.transform = "scale(1)";
+    panel.style.width = COLLAPSED_W + "px";
+    panel.style.height = COLLAPSED_H + "px";
+    panel.style.borderRadius = COLLAPSED_H / 2 + "px"; // capsule
+    if (instant) {
+      void panel.offsetHeight;
+      panel.style.transition = "";
+    }
   }
 
   function openWidget() {
     if (isOpen) return;
     isOpen = true;
-    clearTimeout(closeTimer);
     clearTimeout(hoverTimer);
 
-    // Measure the pill before it goes anywhere, hover scale included.
-    var rect = pill.getBoundingClientRect();
-    var targetH = Math.min(680, window.innerHeight - 48);
-
-    // Seed the panel on the pill's footprint with no transition, so the first
-    // painted frame is indistinguishable from the pill it replaces.
-    panel.classList.remove("felt-panel--closing"); // in case a close was interrupted
-    panel.classList.add("felt-panel--collapsed");
-    panel.style.transition = "none";
-    panel.style.width = rect.width + "px";
-    panel.style.height = rect.height + "px";
-    panel.style.borderRadius = pillRadius(rect);
-    panel.classList.add("felt-panel--visible");
-
-    // Pill sits above the panel (z-index 100000) and fades off the top of it.
-    pill.classList.add("felt-pill--fading");
-
-    // Flush the seeded geometry, otherwise the browser coalesces it with the
-    // target values below and the expand never animates.
-    void panel.offsetHeight;
+    panel.classList.remove("felt-panel--collapsed");
+    panel.classList.add("felt-panel--open");
 
     panel.style.transition = expandTransition();
-    panel.style.width = "420px";
-    panel.style.height = targetH + "px";
+    panel.style.transform = "scale(1)"; // unwind any hover scale on the way out
+    panel.style.width = PANEL_W + "px";
+    panel.style.height = Math.min(PANEL_MAX_H, window.innerHeight - 48) + "px";
     panel.style.borderRadius = PANEL_RADIUS;
-    panel.classList.remove("felt-panel--collapsed");
+
+    inputEl.readOnly = false;
+    inputEl.removeAttribute("tabindex");
 
     if (messagesEl.children.length === 0) {
       appendBotMessage(OPENING_MESSAGE);
       setTimeout(showQuickReplies, 120);
     }
 
-    setTimeout(function () {
-      pill.classList.add("felt-pill--hidden");
-      pill.style.transform = "scale(1)";
-      inputEl.focus();
-    }, EXPAND_MS);
+    setTimeout(function () { inputEl.focus(); }, EXPAND_MS);
   }
 
   function closeWidget() {
     if (!isOpen) return;
     isOpen = false;
-    clearTimeout(closeTimer);
+    clearTimeout(hoverTimer);
 
-    // Un-hide the pill to measure it, but keep it transparent — a display:none
-    // element has no box to read.
-    pill.classList.remove("felt-pill--hidden");
-    pill.classList.add("felt-pill--fading");
-    pill.style.transform = "scale(1)";
-    var rect = pill.getBoundingClientRect();
-
+    panel.classList.remove("felt-panel--open");
     panel.classList.add("felt-panel--collapsed");
-    panel.classList.add("felt-panel--closing");
-    panel.style.transition = expandTransition();
-    panel.style.width = rect.width + "px";
-    panel.style.height = rect.height + "px";
-    panel.style.borderRadius = pillRadius(rect);
 
-    // Bring the pill back just before the panel lands, so the two crossfade
-    // rather than one popping in after the other has gone.
-    setTimeout(function () {
-      pill.classList.remove("felt-pill--fading");
-    }, Math.max(0, EXPAND_MS - 180));
+    // Collapsed, the row is only wide enough for the label, so a leftover draft
+    // would spill out of the pill. Clear it so it always reads as the prompt.
+    inputEl.blur();
+    inputEl.value = "";
+    inputEl.readOnly = true;
+    inputEl.setAttribute("tabindex", "-1");
 
-    closeTimer = setTimeout(function () {
-      // Suppress transitions for the reset. Clearing the inline width/height
-      // snaps the panel back to its stylesheet 420x680 instantly, while
-      // dropping --visible starts the base 0.6s opacity fade — so without this
-      // the full-size panel reappears and fades out after the collapse has
-      // already finished, which reads as a flash of the window reopening.
-      panel.style.transition = "none";
-      panel.classList.remove("felt-panel--visible");
-      panel.classList.remove("felt-panel--collapsed");
-      panel.classList.remove("felt-panel--closing");
-      panel.style.width = "";
-      panel.style.height = "";
-      panel.style.borderRadius = "";
-      panel.style.opacity = "";
-      panel.style.transform = "";
-      void panel.offsetHeight; // flush the reset before transitions come back
-      panel.style.transition = "";
-    }, EXPAND_MS);
+    applyCollapsed(false);
   }
 
   // ─── Events ────────────────────────────────────────────────────────────────
-  pill.addEventListener("click", function () {
-    if (isOpen) {
-      closeWidget();
-    } else {
-      openWidget();
-    }
+  // Collapsed, the whole panel is the button. Expanded it must not swallow
+  // clicks, so closing goes through the close button only.
+  panel.addEventListener("click", function () {
+    if (!isOpen) openWidget();
   });
 
   inputEl.addEventListener("keydown", function (e) {
@@ -1226,13 +1199,17 @@ function Lt(n, s) {
     }
   });
 
-  // Close button
-  btnClose.addEventListener("click", function () {
+  // Close button. stopPropagation matters: the panel itself is the open button
+  // now, and closeWidget clears isOpen before the event finishes bubbling — so
+  // without this the panel handler sees a closed widget and reopens it at once.
+  btnClose.addEventListener("click", function (e) {
+    e.stopPropagation();
     closeWidget();
   });
 
   // Back button — remove last user+bot exchange from DOM and history
-  btnBack.addEventListener("click", function () {
+  btnBack.addEventListener("click", function (e) {
+    e.stopPropagation();
     // Need at least one user message to go back
     var allMsgs = messagesEl.querySelectorAll(".felt-message-block");
     if (allMsgs.length <= 1) {
@@ -1270,5 +1247,30 @@ function Lt(n, s) {
   // Close on Escape
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && isOpen) closeWidget();
+  });
+
+  // ─── Init ──────────────────────────────────────────────────────────────────
+  // Start collapsed. Measured after the panel is in the document, since the
+  // pill's size is read off the real laid-out input row.
+  panel.classList.add("felt-panel--collapsed");
+  inputEl.readOnly = true;
+  inputEl.setAttribute("tabindex", "-1");
+  measureCollapsed();
+  applyCollapsed(true);
+
+  // The label sets the pill's width, and web fonts can land after first paint.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () {
+      var w = COLLAPSED_W;
+      measureCollapsed();
+      if (!isOpen && COLLAPSED_W !== w) applyCollapsed(true);
+    });
+  }
+
+  // Keep the open panel within a resized viewport.
+  window.addEventListener("resize", function () {
+    if (isOpen) {
+      panel.style.height = Math.min(PANEL_MAX_H, window.innerHeight - 48) + "px";
+    }
   });
 })();
