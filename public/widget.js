@@ -605,7 +605,10 @@ function Lt(n, s) {
     ".felt-panel--open{user-select:auto;}",
 
     /* TOP BAR */
-    ".felt-topbar{position:absolute;top:0;left:0;right:0;padding:20px 20px;",
+    // Width and bottom offset are both pinned at init. Anchored from the bottom
+    // like everything else, so it holds still instead of riding the panel's top
+    // edge down through the collapse.
+    ".felt-topbar{position:absolute;left:0;padding:20px 20px;",
     "display:flex;align-items:center;justify-content:space-between;z-index:10;}",
     ".felt-topbar-left{display:flex;align-items:center;gap:16px;}",
     ".felt-topbar-btn{width:36px;height:36px;border-radius:50%;",
@@ -615,13 +618,19 @@ function Lt(n, s) {
     ".felt-topbar-btn:hover{background:rgba(255,255,255,0.2);}",
 
     /* MESSAGES AREA */
-    // Padding is not compressible, so in the collapsed panel this row cannot be
-    // shorter than its own 80px+bottom padding no matter what flex says. It is
-    // allowed to overflow and be clipped instead; the input row below is taken
-    // out of flow so it can never be pushed out with it. Bottom padding clears
-    // the pinned input row the same way the top padding clears the topbar.
-    ".felt-messages{flex:1;min-height:0;overflow-y:auto;padding:80px 32px 100px 32px;",
-    "display:flex;flex-direction:column;scrollbar-width:none;}",
+    // A fixed-size layer pinned to the bottom edge, not a flex item. Both its
+    // width and height are set at init to the panel's OPEN size and then never
+    // change, so the conversation is laid out exactly once. The panel narrows
+    // and shortens around it and clips it; the text never rewraps and never
+    // moves. Anchoring to bottom:0 matters because the panel grows from its
+    // bottom-left corner — the bottom edge is the only one that holds still,
+    // and laying out from the top would drag the whole conversation with it.
+    ".felt-messages{position:absolute;left:0;bottom:0;overflow-y:auto;",
+    "padding:80px 32px 100px 32px;display:flex;flex-direction:column;scrollbar-width:none;}",
+    // Bottom-anchors the conversation against the one edge that never moves.
+    // An auto margin rather than justify-content:flex-end, which bottom-anchors
+    // but breaks scrolling once the content overflows.
+    ".felt-messages > *:first-child{margin-top:auto;}",
     ".felt-messages::-webkit-scrollbar{display:none;}",
 
     /* MESSAGE BLOCK */
@@ -657,7 +666,10 @@ function Lt(n, s) {
     // Taken out of flow and pinned to the panel's bottom edge. This is what
     // guarantees the orb and label hold their exact viewport position at every
     // size the panel takes — they are measured from an edge that never moves.
-    ".felt-input-area{position:absolute;bottom:0;left:0;right:0;",
+    // Opaque, not transparent: the conversation overflows behind this row while
+    // the panel is collapsing, and without a background it shows through from
+    // behind the orb and the label.
+    ".felt-input-area{position:absolute;bottom:0;left:0;right:0;background:#000000;",
     "padding:16px 32px 28px;display:flex;align-items:center;gap:12px;border-top:none;}",
     ".felt-input{flex:1;background:transparent;border:none;outline:none;",
     "font-size:16px;color:#ffffff;font-family:inherit;padding:0;}",
@@ -671,9 +683,16 @@ function Lt(n, s) {
     ".felt-panel--collapsed{cursor:pointer;}",
     ".felt-panel--collapsed .felt-input{pointer-events:none;cursor:pointer;}",
 
-    /* Only the content above the input row fades. The input row never does. */
-    ".felt-panel-fade{transition:opacity 0.3s ease;}",
-    ".felt-panel--collapsed .felt-panel-fade{opacity:0;pointer-events:none;}",
+    /* Only the content above the input row fades. The input row never does.
+       Blurring as it goes hides the fact that the conversation is being clipped
+       by a shrinking window rather than genuinely shrinking with it — the same
+       trick Off Menu uses on their panel. Fading out is quicker than fading in
+       so the content is gone well before the panel is small enough to crowd it,
+       and the delay on the way in lets the window get most of the way open
+       before the conversation arrives. */
+    ".felt-panel-fade{transition:opacity 0.28s ease 0.16s,filter 0.28s ease 0.16s;}",
+    ".felt-panel--collapsed .felt-panel-fade{opacity:0;filter:blur(6px);pointer-events:none;",
+    "transition:opacity 0.2s ease,filter 0.2s ease;}",
 
     /* TYPING PULSE */
     ".felt-pulse{display:flex;gap:4px;align-items:center;padding:4px 0;margin-top:4px;}",
@@ -1150,10 +1169,14 @@ function Lt(n, s) {
     panel.classList.remove("felt-panel--collapsed");
     panel.classList.add("felt-panel--open");
 
+    // Re-measure on the way open: init can run before the viewport has settled
+    // on its final height, and this is the last moment it still costs nothing.
+    var openH = sizeContentLayers();
+
     panel.style.transition = expandTransition();
     panel.style.transform = "scale(1)"; // unwind any hover scale on the way out
     panel.style.width = PANEL_W + "px";
-    panel.style.height = Math.min(PANEL_MAX_H, window.innerHeight - 48) + "px";
+    panel.style.height = openH + "px";
     panel.style.borderRadius = PANEL_RADIUS;
 
     inputEl.readOnly = false;
@@ -1252,6 +1275,24 @@ function Lt(n, s) {
   // ─── Init ──────────────────────────────────────────────────────────────────
   // Start collapsed. Measured after the panel is in the document, since the
   // pill's size is read off the real laid-out input row.
+  // Lay the conversation and the topbar out at the panel's open size, once.
+  // The panel resizes around them and clips; they never rewrap and never move.
+  var topbarEl = panel.querySelector(".felt-topbar");
+
+  function sizeContentLayers() {
+    // Clamped low: if this runs before the viewport has a height, innerHeight-48
+    // goes negative, the browser rejects the invalid height outright and keeps
+    // the negative bottom offset, which throws the whole layer off screen.
+    var h = Math.max(240, Math.min(PANEL_MAX_H, window.innerHeight - 48));
+    messagesEl.style.width = PANEL_W + "px";
+    messagesEl.style.height = h + "px";
+    topbarEl.style.width = PANEL_W + "px";
+    // Sit at the top of that fixed layer, expressed from the bottom edge.
+    topbarEl.style.bottom = h - topbarEl.offsetHeight + "px";
+    return h;
+  }
+  sizeContentLayers();
+
   panel.classList.add("felt-panel--collapsed");
   inputEl.readOnly = true;
   inputEl.setAttribute("tabindex", "-1");
@@ -1267,10 +1308,10 @@ function Lt(n, s) {
     });
   }
 
-  // Keep the open panel within a resized viewport.
+  // Keep the open panel, and the fixed content layers inside it, in step with a
+  // resized viewport.
   window.addEventListener("resize", function () {
-    if (isOpen) {
-      panel.style.height = Math.min(PANEL_MAX_H, window.innerHeight - 48) + "px";
-    }
+    var h = sizeContentLayers();
+    if (isOpen) panel.style.height = h + "px";
   });
 })();
