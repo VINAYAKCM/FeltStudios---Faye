@@ -587,21 +587,55 @@ function Lt(n, s) {
   var calendarShown = false;
 
   // ─── Styles ────────────────────────────────────────────────────────────────
+  // Figtree is the UI face on studiofelt.co. Loaded with a full system fallback
+  // so the widget still renders correctly if the request is blocked or slow —
+  // the pill measures its own width from the laid-out text, and re-measures on
+  // fonts.ready, so a late swap corrects itself rather than clipping.
+  var fontLink = document.createElement("link");
+  fontLink.rel = "stylesheet";
+  fontLink.href =
+    "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&display=swap";
+  document.head.appendChild(fontLink);
+
+  var FONT_STACK =
+    "'Figtree',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+
   var style = document.createElement("style");
   style.textContent = [
     /* Reset — padding intentionally excluded: ID specificity would override class padding rules */
-    "#sf-widget-root *{box-sizing:border-box;margin:0;}",
+    "#sf-widget-root *{box-sizing:border-box;margin:0;",
+    // Apple ships optically-tuned type; on the web the closest equivalent is
+    // asking for grayscale smoothing so weights read as drawn rather than
+    // fattened by subpixel rendering on dark backgrounds.
+    "-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}",
 
     /* PANEL — always present and always opaque. It is never hidden and never
        faded: collapsed it is the pill, expanded it is the window. Size is
        driven inline so open and closed share one continuous animation.
        Pinned bottom-left so growing changes only its top and right edges,
        which is what keeps the input row nailed in place. */
-    ".felt-panel{background:#000000;border:none;position:fixed;bottom:24px;left:24px;",
+    // Surface is #1a1b1e — the exact dark studiofelt.co uses for its own dark
+    // sections, rather than pure black. Against the site's warm paper ground a
+    // true black reads as a hole punched in the page; a tinted near-black reads
+    // as a physical panel resting above it.
+    // Solid, deliberately: the background is the thing that morphs, and a
+    // gradient would recompute against every intermediate box size and slide
+    // around through the animation.
+    ".felt-panel{background:#1a1b1e;border:none;position:fixed;bottom:24px;left:24px;",
     "display:flex;flex-direction:column;overflow:hidden;",
-    "font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;",
-    "box-shadow:0 32px 64px rgba(0,0,0,0.6);z-index:99999;transform-origin:bottom left;",
-    "user-select:none;will-change:width,height;}",
+    "font-family:" + FONT_STACK + ";",
+    // Layered like a real elevation: a hairline to define the edge, a tight
+    // contact shadow, then a wide soft cast. Plus a bright inset top edge —
+    // light catching the top face of the material.
+    "box-shadow:0 0 0 1px rgba(255,255,255,0.06),",
+    "0 2px 8px rgba(0,0,0,0.24),",
+    "0 24px 64px -12px rgba(0,0,0,0.55),",
+    "inset 0 1px 0 rgba(255,255,255,0.07);",
+    "z-index:99999;transform-origin:bottom left;",
+    // will-change only earns its keep on compositor-friendly properties; width
+    // and height are laid out on the main thread either way, so hinting them
+    // just reserves memory for nothing. transform is the one that benefits.
+    "user-select:none;will-change:transform;}",
     ".felt-panel--open{user-select:auto;}",
 
     /* TOP BAR */
@@ -611,11 +645,21 @@ function Lt(n, s) {
     ".felt-topbar{position:absolute;left:0;padding:20px 20px;",
     "display:flex;align-items:center;justify-content:space-between;z-index:10;}",
     ".felt-topbar-left{display:flex;align-items:center;gap:16px;}",
-    ".felt-topbar-btn{width:36px;height:36px;border-radius:50%;",
-    "background:rgba(255,255,255,0.12);border:none;cursor:pointer;",
+    // 40px, not 36 — the minimum comfortable hit target.
+    ".felt-topbar-btn{width:40px;height:40px;border-radius:50%;",
+    "background:rgba(255,255,255,0.07);border:none;cursor:pointer;",
     "display:flex;align-items:center;justify-content:center;",
-    "color:#fff;font-size:18px;line-height:1;}",
-    ".felt-topbar-btn:hover{background:rgba(255,255,255,0.2);}",
+    "color:rgba(252,252,250,0.75);font-size:17px;line-height:1;font-family:inherit;",
+    // Named properties, never `all`, and only compositor-friendly ones scale.
+    "transition:background-color 150ms ease,color 150ms ease,transform 150ms ease;",
+    "box-shadow:inset 0 0 0 1px rgba(255,255,255,0.04);}",
+    ".felt-topbar-btn:hover{background:rgba(255,255,255,0.12);color:#fcfcfa;}",
+    // Press feedback lands on pointer-down, not on release — waiting for the
+    // click to acknowledge the press is what makes a control feel dead.
+    ".felt-topbar-btn:active{transform:scale(0.96);}",
+    // A chevron glyph carries its sidebearing on the right, so centring it
+    // geometrically leaves it looking pushed right. Nudge it back by 1px.
+    "#sf-btn-back{padding-right:1px;}",
 
     /* MESSAGES AREA */
     // A fixed-size layer pinned to the bottom edge, not a flex item. Both its
@@ -625,8 +669,17 @@ function Lt(n, s) {
     // moves. Anchoring to bottom:0 matters because the panel grows from its
     // bottom-left corner — the bottom edge is the only one that holds still,
     // and laying out from the top would drag the whole conversation with it.
+    // Horizontal padding matches the input row's, so the conversation starts on
+    // the same vertical line as the orb below it rather than 4px off it.
     ".felt-messages{position:absolute;left:0;bottom:0;overflow-y:auto;",
-    "padding:80px 32px 100px 32px;display:flex;flex-direction:column;scrollbar-width:none;}",
+    "padding:84px 28px 100px 28px;display:flex;flex-direction:column;scrollbar-width:none;",
+    // Scroll edge effect rather than a hard divider: the topbar and the input
+    // row both float over this list, so content dissolves as it passes under
+    // them instead of being sliced by a 1px line. Only where chrome overlaps.
+    "-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 52px,",
+    "#000 calc(100% - 96px),transparent calc(100% - 62px));",
+    "mask-image:linear-gradient(to bottom,transparent 0,#000 52px,",
+    "#000 calc(100% - 96px),transparent calc(100% - 62px));}",
     // Bottom-anchors the conversation against the one edge that never moves.
     // An auto margin rather than justify-content:flex-end, which bottom-anchors
     // but breaks scrolling once the content overflows.
@@ -637,26 +690,46 @@ function Lt(n, s) {
     ".felt-message-block{margin-bottom:40px;}",
     ".felt-message-block:last-child{margin-bottom:0;}",
 
-    /* SENDER LABEL ROW */
-    ".felt-label-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;}",
-    ".felt-sender{font-size:13px;font-weight:500;color:rgba(255,255,255,0.35);}",
-    ".felt-timestamp{font-size:13px;color:rgba(255,255,255,0.25);}",
+    /* SENDER LABEL ROW — small text gets slightly POSITIVE tracking; the same
+       negative tracking that tightens a headline closes small text up until it
+       turns into a smudge. Sizes carry their own tracking, never one value. */
+    ".felt-label-row{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}",
+    ".felt-sender{font-size:12px;font-weight:600;color:#8c91a1;letter-spacing:0.01em;}",
+    // Tabular figures: the clock changes and proportional digits make it twitch.
+    ".felt-timestamp{font-size:12px;font-weight:400;color:rgba(140,145,161,0.6);",
+    "letter-spacing:0.01em;font-variant-numeric:tabular-nums;}",
 
-    /* MESSAGE TEXT */
-    ".felt-message-text{font-size:17px;padding-bottom:15px;font-weight:500;color:#ffffff;line-height:1.4;",
-    "white-space:pre-wrap;letter-spacing:-0.02em;word-break:break-word;}",
+    /* MESSAGE TEXT — 17px is the largest type here, so it takes the tightest
+       tracking. Warm off-white rather than #fff: it is the same paper colour
+       the site uses, and pure white on a near-black surface glares. */
+    ".felt-message-text{font-size:17px;padding-bottom:15px;font-weight:400;color:#fcfcfa;",
+    "line-height:1.47;white-space:pre-wrap;letter-spacing:-0.014em;word-break:break-word;",
+    // Avoids a short widowed last line on wrapped replies.
+    "text-wrap:pretty;}",
 
-    /* CHIPS */
-    ".felt-chips{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:16px;padding-bottom:10px}",
-    ".felt-chip{padding:8px 10px;background:rgba(255,255,255,0.1);border:none;border-radius:100px;",
-    "font-size:16px;font-weight:400;color:rgba(255,255,255,0.75);cursor:pointer;",
-    "transition:background 0.15s,color 0.15s;display:inline-flex;align-items:center;",
-    "font-family:inherit;white-space:nowrap;}",
-    ".felt-chip:hover{background:rgba(255,255,255,0.18);color:#fff;}",
+    /* CHIPS — capsules, matching the 100px pills the site uses for its own
+       actions. Shadow rather than a border: a hairline ring plus a faint lift
+       reads as a raised surface where a flat 1px border reads as a box. */
+    ".felt-chips{display:flex;flex-direction:column;align-items:flex-start;gap:8px;",
+    "margin-top:20px;padding-bottom:10px}",
+    // 11px vertical takes the chip to a 40px tall target rather than 38.
+    ".felt-chip{padding:11px 16px;background:rgba(255,255,255,0.055);border:none;",
+    "border-radius:100px;font-size:15px;font-weight:500;color:rgba(252,252,250,0.82);",
+    "cursor:pointer;letter-spacing:-0.006em;",
+    "box-shadow:inset 0 0 0 1px rgba(255,255,255,0.06);",
+    "transition:background-color 150ms ease,color 150ms ease,",
+    "box-shadow 150ms ease,transform 150ms ease;",
+    "display:inline-flex;align-items:center;font-family:inherit;white-space:nowrap;}",
+    ".felt-chip:hover{background:rgba(255,255,255,0.1);color:#fcfcfa;",
+    "box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12);}",
+    ".felt-chip:active{transform:scale(0.96);}",
 
-    /* CALENDAR EMBED */
-    ".felt-cal-card{width:100%;height:500px;border-radius:12px;overflow:hidden;",
-    "background:#111;margin-top:12px;}",
+    /* CALENDAR EMBED — concentric: the card sits in a 32px-padded column, so it
+       is its own surface and takes the panel's 20px radius, ringed like the
+       chips rather than bordered. */
+    ".felt-cal-card{width:100%;height:500px;border-radius:20px;overflow:hidden;",
+    "background:#121316;margin-top:16px;",
+    "box-shadow:inset 0 0 0 1px rgba(255,255,255,0.07);}",
     ".felt-cal-card iframe{width:100%;height:100%;border:none;display:block;}",
 
     /* INPUT AREA — the one row that exists in both states. It is bottom-anchored
@@ -669,11 +742,16 @@ function Lt(n, s) {
     // Opaque, not transparent: the conversation overflows behind this row while
     // the panel is collapsing, and without a background it shows through from
     // behind the orb and the label.
-    ".felt-input-area{position:absolute;bottom:0;left:0;right:0;background:#000000;",
-    "padding:16px 32px 28px;display:flex;align-items:center;gap:12px;border-top:none;}",
+    // Background must be the panel's exact surface colour, not merely dark: any
+    // difference shows as a seam across the pill, where this row IS the panel.
+    ".felt-input-area{position:absolute;bottom:0;left:0;right:0;background:#1a1b1e;",
+    "padding:16px 28px 26px;display:flex;align-items:center;gap:12px;border-top:none;}",
     ".felt-input{flex:1;background:transparent;border:none;outline:none;",
-    "font-size:16px;color:#ffffff;font-family:inherit;padding:0;}",
-    ".felt-input::placeholder{color:#ffffff;opacity:1;}",
+    "font-size:16px;font-weight:500;color:#fcfcfa;font-family:inherit;padding:0;",
+    "letter-spacing:-0.008em;}",
+    // The placeholder doubles as the pill's label, so it stays full-strength
+    // rather than the usual dimmed grey — it is a title here, not a hint.
+    ".felt-input::placeholder{color:#fcfcfa;opacity:1;}",
 
     /* ORB */
     ".felt-orb{display:block;flex-shrink:0;}",
@@ -701,12 +779,29 @@ function Lt(n, s) {
 
     /* TYPING PULSE */
     ".felt-pulse{display:flex;gap:4px;align-items:center;padding:4px 0;margin-top:4px;}",
-    ".felt-pulse span{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.35);",
+    ".felt-pulse span{width:5px;height:5px;border-radius:50%;background:#8c91a1;",
     "animation:felt-bounce 1.2s ease-in-out infinite;}",
     ".felt-pulse span:nth-child(2){animation-delay:0.2s;}",
     ".felt-pulse span:nth-child(3){animation-delay:0.4s;}",
-    "@keyframes felt-bounce{0%,80%,100%{transform:translateY(0);opacity:0.35;}",
-    "40%{transform:translateY(-5px);opacity:0.9;}}",
+    "@keyframes felt-bounce{0%,80%,100%{transform:translateY(0);opacity:0.3;}",
+    "40%{transform:translateY(-4px);opacity:0.85;}}",
+
+    /* A new message arrives with opacity + a small rise + a blur clearing —
+       three channels together read as arriving, where opacity alone reads as
+       switched on. Deliberately scoped to message blocks only; it is a separate
+       one-shot enter and never touches the panel's own open/close transition. */
+    "@keyframes felt-msg-in{from{opacity:0;transform:translateY(8px);filter:blur(3px);}",
+    "to{opacity:1;transform:translateY(0);filter:blur(0);}}",
+    ".felt-message-block{animation:felt-msg-in 380ms cubic-bezier(0.16,1,0.3,1) both;}",
+    // Reduced motion keeps the fade for comprehension and drops the movement.
+    "@media (prefers-reduced-motion:reduce){",
+    ".felt-message-block{animation-duration:1ms;}",
+    ".felt-topbar-btn:active,.felt-chip:active{transform:none;}}",
+    // Frosted surfaces are unavailable to some users; keep the panel solid and
+    // strip the inset highlight that only reads correctly as a material edge.
+    "@media (prefers-contrast:more){",
+    ".felt-panel{box-shadow:0 0 0 1px rgba(255,255,255,0.28),0 24px 64px -12px rgba(0,0,0,0.6);}",
+    ".felt-chip{box-shadow:inset 0 0 0 1px rgba(255,255,255,0.3);}}",
   ].join("");
   document.head.appendChild(style);
 
@@ -1168,7 +1263,10 @@ function Lt(n, s) {
   // circular and the content never stretches, and because the panel is pinned
   // bottom-left, resizing moves only its top and right edges — which is exactly
   // what holds the orb and the label still.
-  var PANEL_RADIUS = "20px";
+  // 28px — the radius studiofelt.co uses on its own large surfaces. Only the
+  // target value changes here; the animation still interpolates it exactly as
+  // before, from the pill's capsule radius to this.
+  var PANEL_RADIUS = "28px";
 
   function expandTransition() {
     return transitionWith(EXPAND_MS + "ms " + EXPAND_EASE);
