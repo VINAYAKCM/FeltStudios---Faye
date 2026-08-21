@@ -4,12 +4,62 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Widget Test</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; background: #0a0a0a; }
+    html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body {
+      font-family: 'Figtree', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    /* Studio Felt's two real grounds, so the widget can be judged against the
+       backgrounds it will actually sit on rather than an arbitrary flat one.
+       Scroll between them — the widget is fixed, so the ground moves under it. */
+    section {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 clamp(24px, 8vw, 120px);
+    }
+    .paper { background: #fcfcfa; color: rgba(26, 26, 51, 0.83); }
+    .ink   { background: #0b0c0d; color: rgba(252, 252, 250, 0.9); }
+
+    h1 {
+      font-size: clamp(32px, 4.5vw, 56px);
+      font-weight: 400;
+      line-height: 1.18;
+      letter-spacing: -0.02em;
+      text-wrap: balance;
+      max-width: 16ch;
+    }
+    .label {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.45;
+      margin-bottom: 20px;
+    }
+    .inner { max-width: 900px; width: 100%; }
   </style>
 </head>
 <body>
+  <section class="paper">
+    <div class="inner">
+      <p class="label">Light ground &mdash; scroll down for dark</p>
+      <h1>Crafting products for the Intelligence Era</h1>
+    </div>
+  </section>
+
+  <section class="ink">
+    <div class="inner">
+      <p class="label">Dark ground</p>
+      <h1>The panel should still read as a distinct surface here.</h1>
+    </div>
+  </section>
+
   <script src="/widget.js"></script>
 </body>
 </html>
