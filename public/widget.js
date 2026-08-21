@@ -686,13 +686,18 @@ function Lt(n, s) {
     /* Only the content above the input row fades. The input row never does.
        Blurring as it goes hides the fact that the conversation is being clipped
        by a shrinking window rather than genuinely shrinking with it — the same
-       trick Off Menu uses on their panel. Fading out is quicker than fading in
-       so the content is gone well before the panel is small enough to crowd it,
-       and the delay on the way in lets the window get most of the way open
-       before the conversation arrives. */
+       trick Off Menu uses on their panel.
+
+       Deliberately one rule for both directions: the same delay and the same
+       duration opening and closing. An earlier version dissolved the content
+       faster on the way out to keep it from crowding the shrinking pill, but an
+       empty box barely registers as motion, so the window read as already shut
+       at 200ms while the geometry was still running to 600 — which is what made
+       closing feel so much quicker than opening even though the box itself was
+       animating identically. The crowding it guarded against is handled
+       properly now by the input row being opaque. */
     ".felt-panel-fade{transition:opacity 0.28s ease 0.16s,filter 0.28s ease 0.16s;}",
-    ".felt-panel--collapsed .felt-panel-fade{opacity:0;filter:blur(6px);pointer-events:none;",
-    "transition:opacity 0.2s ease,filter 0.2s ease;}",
+    ".felt-panel--collapsed .felt-panel-fade{opacity:0;filter:blur(6px);pointer-events:none;}",
 
     /* TYPING PULSE */
     ".felt-pulse{display:flex;gap:4px;align-items:center;padding:4px 0;margin-top:4px;}",
