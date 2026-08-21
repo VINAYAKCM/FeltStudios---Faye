@@ -744,9 +744,16 @@ function Lt(n, s) {
     // behind the orb and the label.
     // Background must be the panel's exact surface colour, not merely dark: any
     // difference shows as a seam across the pill, where this row IS the panel.
+    // Symmetric vertical padding. Collapsed, this row IS the pill, so uneven
+    // padding leaves the orb and label visibly riding high in the capsule.
+    // Same 74px total either way, so the pill's size is unchanged.
     ".felt-input-area{position:absolute;bottom:0;left:0;right:0;background:#1a1b1e;",
-    "padding:16px 28px 26px;display:flex;align-items:center;gap:12px;border-top:none;}",
-    ".felt-input{flex:1;background:transparent;border:none;outline:none;",
+    "padding:21px 28px;display:flex;align-items:center;gap:12px;border-top:none;}",
+    // min-width:0 is load-bearing: a flex item will not shrink below an input's
+    // intrinsic default width (~20 characters), so without it the field
+    // overflows the collapsed pill and gets clipped by the panel instead of
+    // fitting the width the pill was measured to.
+    ".felt-input{flex:1;min-width:0;background:transparent;border:none;outline:none;",
     "font-size:16px;font-weight:500;color:#fcfcfa;font-family:inherit;padding:0;",
     "letter-spacing:-0.008em;}",
     // The placeholder doubles as the pill's label, so it stays full-strength
