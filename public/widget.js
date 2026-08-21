@@ -1105,29 +1105,54 @@ function Lt(n, s) {
   // rebound is what makes 3% of scale feel like a response. Applies only while
   // collapsed, since expanded there is no pill to press.
   var hoverTimer = null;
+  var animTimer = null;
+  var isAnimating = false;
+
+  // Every write to panel.style.transition goes through this, and it always
+  // carries the size properties. Writing a transform-only string would silently
+  // drop width/height out of the transition and make a resize snap instantly —
+  // which is exactly what closing used to do, because the panel shrinks out
+  // from under the cursor, fires mouseleave, and the hover handler clobbered
+  // the collapse that was still running.
+  function transitionWith(transformSpec) {
+    return (
+      "width " + EXPAND_MS + "ms " + EXPAND_EASE +
+      ", height " + EXPAND_MS + "ms " + EXPAND_EASE +
+      ", border-radius " + EXPAND_MS + "ms " + EXPAND_EASE +
+      ", transform " + transformSpec
+    );
+  }
+
+  // Hover is also locked out for the length of an open/close, so it cannot
+  // fight the animation with a competing transform.
+  function beginAnimation() {
+    isAnimating = true;
+    clearTimeout(animTimer);
+    animTimer = setTimeout(function () { isAnimating = false; }, EXPAND_MS);
+  }
 
   function pillScale(deltaPx) {
     return "scale(" + (1 + deltaPx / (COLLAPSED_H || 76)) + ")";
   }
 
   function hoverIn() {
-    if (isOpen) return;
+    if (isOpen || isAnimating) return;
     clearTimeout(hoverTimer);
-    panel.style.transition = "transform 280ms cubic-bezier(0.34,1.56,0.64,1)";
+    panel.style.transition = transitionWith("280ms cubic-bezier(0.34,1.56,0.64,1)");
     panel.style.transform = pillScale(2); // overshoot +2px
     hoverTimer = setTimeout(function () {
-      panel.style.transition = "transform 180ms ease-out";
+      panel.style.transition = transitionWith("180ms ease-out");
       panel.style.transform = pillScale(1.8); // settle at +1.8px
     }, 280);
   }
 
   function hoverOut() {
-    if (isOpen) return;
+    if (isOpen || isAnimating) return;
     clearTimeout(hoverTimer);
-    panel.style.transition = "transform 160ms ease-in";
+    panel.style.transition = transitionWith("160ms ease-in");
     panel.style.transform = pillScale(-0.2); // undershoot
     hoverTimer = setTimeout(function () {
-      panel.style.transition = "transform 220ms " + EXPAND_EASE;
+      panel.style.transition = transitionWith("220ms " + EXPAND_EASE);
       panel.style.transform = "scale(1)";
     }, 160);
   }
@@ -1146,12 +1171,7 @@ function Lt(n, s) {
   var PANEL_RADIUS = "20px";
 
   function expandTransition() {
-    return (
-      "width " + EXPAND_MS + "ms " + EXPAND_EASE +
-      ", height " + EXPAND_MS + "ms " + EXPAND_EASE +
-      ", border-radius " + EXPAND_MS + "ms " + EXPAND_EASE +
-      ", transform " + EXPAND_MS + "ms " + EXPAND_EASE
-    );
+    return transitionWith(EXPAND_MS + "ms " + EXPAND_EASE);
   }
 
   function applyCollapsed(instant) {
@@ -1170,6 +1190,7 @@ function Lt(n, s) {
     if (isOpen) return;
     isOpen = true;
     clearTimeout(hoverTimer);
+    beginAnimation();
 
     panel.classList.remove("felt-panel--collapsed");
     panel.classList.add("felt-panel--open");
@@ -1199,6 +1220,7 @@ function Lt(n, s) {
     if (!isOpen) return;
     isOpen = false;
     clearTimeout(hoverTimer);
+    beginAnimation();
 
     panel.classList.remove("felt-panel--open");
     panel.classList.add("felt-panel--collapsed");
